@@ -1,0 +1,1391 @@
+---
+title: "DEPATI STATISTIK"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    social: menu
+runtime: shiny
+---
+
+```{r global, include=FALSE}
+# load data in 'global' chunk so it can be shared by all users of the dashboard
+library(ggplot2)
+library(mgcv)
+library(DT)
+library(dplyr)
+library(gganimate)
+library(reshape2)
+library(plyr)
+library(ggpmisc)
+library(ggsci)
+library(flexdashboard)
+library(shiny)
+
+dataset <- read.csv('database.csv',sep=',')
+colnames(dataset) <- c('Tahun','Gini Ratio', 'PDRB Perkapita (Juta Rupiah)', 'Konsumsi Perkapita (Juta Rupiah)', 'Persentase Penduduk Miskin (%)','Garis Kemiskinan (Rupiah)','Jumlah Penduduk Miskin (Ribu Jiwa)','Kedalaman Kemiskinan','Keparahan Kemiskinan','Tingkat Partisipasi Angkatan Kerja (%)','Tingkat Pengangguran Terbuka (%)', 'PDRB ADHK (Milyar Rupiah)','PDRB ADHB (Milyar Rupiah)','Pertumbuhan Ekonomi (%)','Perubahan Tingkat Pengangguran Terbuka (%)', 'Perubahan Tingkat Partisipasi Angkatan Kerja (%)', 'Indeks Pembangunan Manusia', 'Harapan Lama Sekolah (Tahun)','Rata-rata Lama Sekolah (Tahun)','Usia Harapan Hidup (Tahun)')
+dataset <- dataset %>% 
+  mutate(`PDRB Perkapita (Juta Rupiah)` = round(`PDRB Perkapita (Juta Rupiah)`,2))
+
+#Data Klassen
+klassen <- read.csv('klassen.csv')
+kab_klas <- filter(klassen, Kota != 'Jambi')
+jambi <- data.frame(x = klassen %>% filter(Kota == 'Jambi') %>% select(Laju),
+                   y = klassen %>% filter(Kota == 'Jambi') %>% select(PDRB.Perkapita),
+                   Penduduk = klassen %>% filter(Kota == 'Jambi') %>% select(Jumlah.Penduduk),
+                   Tahun = 2011:2020)
+```
+
+```{r}
+pdrblapus <- read.csv('pdrblapus.csv',sep=',')
+colnames(pdrblapus) <- c('Lapangan.Usaha', 2020:2010)
+
+pdrblapus <- pdrblapus[-18,]
+
+pdrblapus <- melt(pdrblapus, id.vars=c("Lapangan.Usaha"),
+                  variable.name = 'Tahun',
+                  value.name = 'PDRB')
+pdrblapus <- pdrblapus %>% 
+         mutate(Tahun=as.numeric(as.character(Tahun)))
+
+pdrbkompen <- read.csv("Data PDRB.csv")
+colnames(pdrbkompen) <- c('Komponen.Pengeluaran', 2020:2010)
+pdrbkompen <- melt(pdrbkompen, id.vars=c("Komponen.Pengeluaran"),
+                  variable.name = 'Tahun',
+                  value.name = 'PDRB')
+pdrbkompen <- pdrbkompen %>% 
+  mutate(Tahun=as.numeric(as.character(Tahun)),
+         PDRB = round(PDRB/1000,2))
+
+lajulapus <- read.csv('Laju Lapangan Usaha.csv')
+colnames(lajulapus) <- c('Lapangan.Usaha', 2020:2011)
+lajulapus <- melt(lajulapus, id.vars=c("Lapangan.Usaha"),
+                  variable.name = 'Tahun',
+                  value.name = 'Laju')
+lajulapus <- lajulapus %>% 
+         mutate(Tahun=as.numeric(as.character(Tahun)))
+
+lajupengeluaran <- read.csv('Laju Pengeluaran.csv')
+colnames(lajupengeluaran) <- c('Komponen.Pengeluaran', 2020:2011)
+lajupengeluaran <- melt(lajupengeluaran, id.vars=c("Komponen.Pengeluaran"),
+                  variable.name = 'Tahun',
+                  value.name = 'Laju')
+lajupengeluaran <- lajupengeluaran %>% 
+         mutate(Tahun=as.numeric(as.character(Tahun)))
+
+lajuimplisit <- read.csv('Laju Indeks Implisit.csv')
+colnames(lajuimplisit) <- c('Lapangan.Usaha', 2020:2011)
+lajuimplisit <- melt(lajuimplisit, id.vars=c("Lapangan.Usaha"),
+                  variable.name = 'Tahun',
+                  value.name = 'Laju')
+lajuimplisit <- lajuimplisit %>% 
+         mutate(Tahun=as.numeric(as.character(Tahun)))
+
+distlapus <- read.csv('distribusi pdrb.csv')
+colnames(distlapus) <- c('Lapangan.Usaha', 2020:2010)
+distlapus <- melt(distlapus, id.vars=c("Lapangan.Usaha"),
+                  variable.name = 'Tahun',
+                  value.name = 'Laju')
+distlapus <- distlapus %>% 
+         mutate(Tahun=as.numeric(as.character(Tahun)))
+
+distpengeluaran <- read.csv('distribusi pdrb pengeluaran.csv')
+colnames(distpengeluaran) <- c('Komponen.Pengeluaran', 2020:2010)
+distpengeluaran <- melt(distpengeluaran, id.vars=c("Komponen.Pengeluaran"),
+                  variable.name = 'Tahun',
+                  value.name = 'Laju')
+distpengeluaran <- distpengeluaran %>% 
+         mutate(Tahun=as.numeric(as.character(Tahun)))
+
+pdrbperkapita <- read.csv('pdrb perkapita.csv')
+
+SOG_lapus <- 
+inner_join(
+  ddply(pdrblapus %>% arrange((Lapangan.Usaha),(Tahun)),
+        "Lapangan.Usaha",transform,
+      Difference=c(NA,diff(PDRB))),
+  pdrblapus %>% 
+    dplyr::group_by(Tahun) %>% 
+    dplyr::summarise(Total_PDRB = sum(PDRB))) %>% 
+  mutate(SOG = (Difference/lag(Total_PDRB))*100)
+
+SOG_lapus <- SOG_lapus %>% mutate(Tahun=as.numeric(as.character(Tahun)))
+
+SOG_kompen <- 
+  inner_join(
+    ddply(pdrbkompen %>% arrange((Komponen.Pengeluaran),(Tahun)),
+          "Komponen.Pengeluaran",transform,
+          Difference=c(NA,diff(PDRB))),
+    pdrblapus %>% 
+      dplyr::group_by(Tahun) %>% 
+      dplyr::summarise(Total_PDRB = sum(PDRB))) %>% 
+  mutate(SOG = (Difference/lag(Total_PDRB))*100)
+
+SOG_kompen <- SOG_kompen %>% mutate(Tahun=as.numeric(as.character(Tahun)))
+
+pdrblapusjambi <- read.csv('PDRB ADHK JAMBI.csv',sep=',')
+colnames(pdrblapusjambi) <- c('Lapangan.Usaha', 2020:2010)
+pdrblapusjambi <- pdrblapusjambi[-18,]
+pdrblapusjambi <- melt(pdrblapusjambi, id.vars=c("Lapangan.Usaha"),
+                  variable.name = 'Tahun',
+                  value.name = 'PDRB')
+pdrblapusjambi <- pdrblapusjambi %>% 
+  mutate(Tahun = as.numeric(as.character(Tahun)))
+growth_rate <- function(x)(x/lag(x)-1)*100 
+
+lajujambi <- pdrblapusjambi %>% 
+  dplyr::mutate(Tahun=as.numeric(as.character(Tahun))) %>% 
+  dplyr::group_by(Tahun) %>% 
+  dplyr::summarise(PDRB=sum(PDRB,na.rm=T)) %>% 
+  dplyr::arrange(Tahun) %>% 
+  dplyr::mutate(Pertumbuhan = growth_rate(PDRB))
+
+lajulapusjambi <- ddply(pdrblapusjambi %>% 
+      dplyr::mutate(Tahun=as.numeric(as.character(Tahun))) %>% 
+      arrange(Lapangan.Usaha,(Tahun)),
+      "Lapangan.Usaha",transform,
+      Laju.Jambi=c(NA,exp(diff(log(PDRB)))-1)*100)
+
+SS <- inner_join(inner_join(inner_join(lajulapus,lajulapusjambi %>% 
+                        select(Lapangan.Usaha,Tahun,Laju.Jambi)),
+           lajujambi %>% 
+             select(Tahun,Laju.Prov=Pertumbuhan)),
+           lajulapus %>% 
+             filter(Lapangan.Usaha == 'PRODUK DOMESTIK REGIONAL BRUTO') %>% 
+             select(Tahun,Laju.Kota = Laju))
+SS <- SS %>% 
+  mutate(SS = Laju.Prov + (Laju.Jambi - Laju.Prov) + (Laju - Laju.Kota))
+
+## Location Quotient
+Prop_Prov <- inner_join(pdrblapusjambi, pdrblapusjambi %>% 
+             dplyr::group_by(Tahun) %>% 
+               dplyr::summarise(Total_PDRB = sum(PDRB))) %>% 
+  mutate(Persentase = (PDRB/Total_PDRB)*100)
+
+Prop_Kota <- inner_join(pdrblapus, pdrblapus %>% 
+             dplyr::group_by(Tahun) %>% 
+               dplyr::summarise(Total_PDRB = sum(PDRB))) %>% 
+  mutate(Persentase = (PDRB/Total_PDRB)*100)
+
+LQ <- inner_join(Prop_Prov %>% 
+             select(Lapangan.Usaha, Tahun, Persentase.Prov = Persentase),
+           Prop_Kota %>% 
+             select(Lapangan.Usaha, Tahun, Persentase.Kota = Persentase))
+LQ <- LQ %>% 
+  mutate(LQ = Persentase.Kota/Persentase.Prov)
+
+#ICOR
+#ICOR <- inner_join(pdrbkompen %>% filter(Komponen.Pengeluaran == '4. Pembentukan Modal Tetap Bruto'),
+#pdrbkompen %>% 
+#  dplyr::group_by(Tahun) %>% 
+#  dplyr::summarise(Total_PDRB = sum(PDRB))) %>% 
+#  dplyr::arrange(Tahun) %>% 
+#  mutate(DeltaPMTB = c(NA, diff(PDRB)),
+#         DeltaPDRB = c(NA,diff(Total_PDRB))) %>% 
+#  mutate(ICOR = DeltaPMTB/DeltaPDRB)
+
+#ICOR <- ICOR %>% 
+# mutate(DeltaTK = c(NA,3068, -1289,-317,825,2697,NA,NA,3555,
+#                     -4316, 1395)) %>% 
+#  mutate(ILOR = DeltaTK/DeltaPDRB)
+```
+
+Beranda {data-navmenu=Beranda}
+====================================================
+
+Outputs
+-----------------------------------------------------------------------
+
+### Beranda
+
+![](Cover Depati Statistik.png)
+
+Data Strategis {data-navmenu=Data-Strategis}
+====================================================
+
+Silahkan Pilih {.sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+selectInput('data','Select Data : ', c('PDRB Perkapita (Juta Rupiah)','PDRB ADHK (Milyar Rupiah)','PDRB ADHB (Milyar Rupiah)','Pertumbuhan Ekonomi (%)','Konsumsi Perkapita (Juta Rupiah)', 'Gini Ratio', 'Persentase Penduduk Miskin (%)','Garis Kemiskinan (Rupiah)','Jumlah Penduduk Miskin (Ribu Jiwa)','Kedalaman Kemiskinan','Keparahan Kemiskinan','Tingkat Partisipasi Angkatan Kerja (%)','Tingkat Pengangguran Terbuka (%)', 'Indeks Pembangunan Manusia', 'Harapan Lama Sekolah (Tahun)','Rata-rata Lama Sekolah (Tahun)','Usia Harapan Hidup (Tahun)'))
+```
+
+Outputs {.tabset}
+-----------------------------------------------------------------------
+
+### Grafik
+
+```{r}
+option_data <- reactive({
+  if(input$data == 'Gini Ratio'){
+    p <- ggplot(dataset, aes(x=Tahun, y=`Gini Ratio`)) +
+      geom_point(size=2) + geom_line(size=1) +
+          scale_x_continuous(breaks = c(2010:2021))
+    print(p)
+    }
+  else if (input$data == 'PDRB Perkapita (Juta Rupiah)'){
+    p <- ggplot(dataset, aes(x=Tahun, y=`PDRB Perkapita (Juta Rupiah)`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                scale_x_continuous(breaks = c(2010:2021))
+        print(p)
+  }
+    else if (input$data == 'Konsumsi Perkapita (Juta Rupiah)'){
+    p <- ggplot(dataset, aes(x=Tahun, y=`Konsumsi Perkapita (Juta Rupiah)`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                scale_x_continuous(breaks = c(2010:2021))
+        print(p)
+    }
+  else if (input$data == 'PDRB ADHK (Milyar Rupiah)'){
+        p <- ggplot(dataset, aes(x=Tahun, y=`PDRB ADHK (Milyar Rupiah)`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                    scale_x_continuous(breaks = c(2010:2021))
+            print(p)
+  }
+   else if (input$data == 'PDRB ADHB (Milyar Rupiah)'){
+        p <- ggplot(dataset, aes(x=Tahun, y=`PDRB ADHB (Milyar Rupiah)`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                    scale_x_continuous(breaks = c(2010:2021))
+            print(p)
+   }
+   else if (input$data == 'Indeks Pembangunan Manusia'){
+        p <- ggplot(dataset, aes(x=Tahun, y=`Indeks Pembangunan Manusia`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                    scale_x_continuous(breaks = c(2010:2021))
+            print(p)
+   }
+    else if (input$data == 'Harapan Lama Sekolah (Tahun)'){
+        p <- ggplot(dataset, aes(x=Tahun, y=`Harapan Lama Sekolah (Tahun)`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                    scale_x_continuous(breaks = c(2010:2021))
+            print(p)
+    }
+    else if (input$data == 'Rata-rata Lama Sekolah (Tahun)'){
+        p <- ggplot(dataset, aes(x=Tahun, y=`Rata-rata Lama Sekolah (Tahun)`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                    scale_x_continuous(breaks = c(2010:2021))
+            print(p)
+    }
+     else if (input$data == 'Usia Harapan Hidup (Tahun)'){
+        p <- ggplot(dataset, aes(x=Tahun, y=`Usia Harapan Hidup (Tahun)`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                    scale_x_continuous(breaks = c(2010:2021))
+            print(p)
+    }
+  else if (input$data == 'Pertumbuhan Ekonomi (%)'){
+        p <- ggplot(dataset, aes(x=Tahun, y=`Pertumbuhan Ekonomi (%)`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                    scale_x_continuous(breaks = c(2010:2021))
+            print(p)
+    } 
+  else if (input$data == 'Persentase Penduduk Miskin (%)'){
+        p <- ggplot(dataset, aes(x=Tahun, y=`Persentase Penduduk Miskin (%)`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                    scale_x_continuous(breaks = c(2010:2021))
+            print(p)
+  }
+  else if (input$data == 'Garis Kemiskinan (Rupiah)'){
+         p <- ggplot(dataset, aes(x=Tahun, y=`Garis Kemiskinan (Rupiah)`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                     scale_x_continuous(breaks = c(2010:2021))
+             print(p)
+  }
+  else if (input$data == 'Jumlah Penduduk Miskin (Ribu Jiwa)'){
+        p <- ggplot(dataset, aes(x=Tahun, y=`Jumlah Penduduk Miskin (Ribu Jiwa)`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                    scale_x_continuous(breaks = c(2010:2021))
+            print(p)
+  }
+    else if (input$data == 'Kedalaman Kemiskinan'){
+        p <- ggplot(dataset, aes(x=Tahun, y=`Kedalaman Kemiskinan`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                    scale_x_continuous(breaks = c(2010:2021))
+            print(p)
+    }
+      else if (input$data == 'Keparahan Kemiskinan'){
+        p <- ggplot(dataset, aes(x=Tahun, y=`Keparahan Kemiskinan`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                    scale_x_continuous(breaks = c(2010:2021))
+            print(p)
+  }
+  else if (input$data == 'Tingkat Pengangguran Terbuka (%)'){
+        p <- ggplot(dataset, aes(x=Tahun, y=`Tingkat Pengangguran Terbuka (%)`)) +
+       geom_point(size=2) + geom_line(size=1) +
+                    scale_x_continuous(breaks = c(2010:2021))
+            print(p)
+  }
+  else if (input$data == 'Tingkat Partisipasi Angkatan Kerja (%)'){
+        p <- ggplot(dataset, aes(x=Tahun, y=`Tingkat Partisipasi Angkatan Kerja (%)`)) +
+      geom_point(size=2) + geom_line(size=1) +
+                    scale_x_continuous(breaks = c(2010:2021))
+            print(p)
+  } 
+  else {
+ 
+  }
+})
+
+renderPlot({
+  theme_set(theme_bw())
+  option_data()})
+```
+
+Detail {.tabset}
+-----------------------------------------------------------------------
+
+### Tabel
+
+```{r}
+print_data <- reactive({
+    if(input$data == 'Gini Ratio'){
+      dataset %>% select(Tahun, `Gini Ratio`)
+    }
+  else if (input$data == 'PDRB Perkapita (Juta Rupiah)'){
+      dataset %>% select(Tahun, `PDRB Perkapita (Juta Rupiah)`)    
+    }
+  else if (input$data == 'PDRB ADHK (Milyar Rupiah)'){
+      dataset %>% select(Tahun, `PDRB ADHK (Milyar Rupiah)`)    
+  }
+   else if (input$data == 'PDRB ADHB (Milyar Rupiah)'){
+      dataset %>% select(Tahun, `PDRB ADHB (Milyar Rupiah)`)    
+    }
+  else if (input$data == 'Pertumbuhan Ekonomi (%)'){
+      dataset %>% select(Tahun, `Pertumbuhan Ekonomi (%)`)    
+    } 
+  else if (input$data == 'Persentase Penduduk Miskin (%)'){
+      dataset %>% select(Tahun, `Persentase Penduduk Miskin (%)`)    
+  }
+  else if (input$data == 'Garis Kemiskinan (Rupiah)'){
+      dataset %>% select(Tahun, `Garis Kemiskinan (Rupiah)`)
+  }
+  else if (input$data == 'Jumlah Penduduk Miskin (Ribu Jiwa)'){
+      dataset %>% select(Tahun, `Jumlah Penduduk Miskin (Ribu Jiwa)`)
+  }
+  else if (input$data == 'Tingkat Pengangguran Terbuka (%)'){
+      dataset %>% select(Tahun, `Tingkat Pengangguran Terbuka (%)`)    
+  }
+  else if (input$data == 'Tingkat Partisipasi Angkatan Kerja (%)'){
+      dataset %>% select(Tahun, `Tingkat Partisipasi Angkatan Kerja (%)`)
+  } 
+      else if (input$data == 'Konsumsi Perkapita (Juta Rupiah)'){
+      dataset %>% select(Tahun, `Konsumsi Perkapita (Juta Rupiah)`)
+    } 
+    else if (input$data == 'Kedalaman Kemiskinan'){
+      dataset %>% select(Tahun, `Kedalaman Kemiskinan`)
+    } 
+  else if (input$data == 'Keparahan Kemiskinan'){
+      dataset %>% select(Tahun, `Keparahan Kemiskinan`)
+  } 
+  else if (input$data == 'Indeks Pembangunan Manusia'){
+      dataset %>% select(Tahun, `Indeks Pembangunan Manusia`)
+  } 
+  else if (input$data == 'Harapan Lama Sekolah (Tahun)'){
+      dataset %>% select(Tahun, `Harapan Lama Sekolah (Tahun)`)
+  }
+    else if (input$data == 'Rata-rata Lama Sekolah (Tahun)'){
+      dataset %>% select(Tahun, `Rata-rata Lama Sekolah (Tahun)`)
+  }
+   else if (input$data == 'Usia Harapan Hidup (Tahun)'){
+      dataset %>% select(Tahun, `Usia Harapan Hidup (Tahun)`)
+  } 
+  else {
+
+  }
+})
+
+renderDT(
+  DT::datatable(print_data(),rownames=F,extensions = 'Buttons', options = list(
+    scrollY="400px", scrollX=TRUE,
+    dom = 'Bfrtip',
+    buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+    pageLength=20))
+)
+```
+
+### Penjelasan Indikator
+
+```{r}
+penjelasan2 <- reactive({if(input$data == 'PDRB Perkapita (Juta Rupiah)'){
+  HTML("<b> PDRB Perkapita (Juta Rupiah) </b> <br>
+       <ul><li> Nilai PDRB dibagi jumlah penduduk dalam suatu wilayah pada periode tertentu. </li><li>
+        PDRB Perkapita digunakan untuk mengetahui tingkat kesejahteraan masyarakat suatu daerah secara umum </li><li>
+        Semakin besar angka PDRB per kapita, semakin sejahtera penduduk suatu wilayah.</li></ul><br> 
+ Sumber: https://sirusa.bps.go.id/sirusa/index.php/indikator/953")}
+  else if (input$data == 'PDRB ADHK (Milyar Rupiah)'){
+  HTML("<b> PDRB ADHK (Milyar Rupiah) </b> <br>
+  <ul><li> Penjumlahan nilai tambah bruto seluruh barang dan jasa yang tercipta atau dihasilkan di wilayah domestik suatu regional/negara yang timbul akibat berbagai aktivitas ekonomi dalam suatu periode tertentu tanpa memperhatikan apakah faktor produksi yang dimiliki residen atau non-residen, di mana barang dan jasa dihitung pada harga yang tetap (harga pada tahun dasar) </li></ul><br>
+  Sumber: https://sirusa.bps.go.id/sirusa/index.php/variabel/7077 
+  ")
+  } 
+   else if (input$data == 'PDRB ADHB (Milyar Rupiah)'){
+  HTML("<b> PDRB ADHB (Milyar Rupiah) </b> <br>
+  <ul><li> Penjumlahan nilai tambah atas barang dan jasa yang dihasilkan oleh berbagai unit produksi di suatu wilayah dalam jangka waktu satu tahun, di mana barang dan jasa dihitung menggunakan harga yang berlaku pada tahun berjalan </li></ul><br>
+  Sumber: https://sirusa.bps.go.id/sirusa/index.php/variabel/7804 
+  ")
+  } 
+    else if (input$data == 'Pertumbuhan Ekonomi (%)'){
+  HTML("<b> Pertumbuhan Ekonomi (%) </b> <br>
+  <ul><li> Perkembangan produksi barang dan jasa di suatu wilayah perekonomian pada tahun tertentu terhadap nilai tahun sebelumnya yang dihitung berdasarkan PDB/PDRB atas dasar harga konstan </li></ul><br>
+  Sumber: https://sirusa.bps.go.id/sirusa/index.php/variabel/1435 
+  ")
+  } else if (input$data == 'Konsumsi Perkapita (Juta Rupiah)') {
+ HTML("<b> Konsumsi Perkapita (Juta Rupiah) </b> <br>
+       <ul><li> Pengeluaran konsumsi per kapita adalah biaya yang dikeluarkan untuk konsumsi semua anggota rumah tangga selama sebulan dibagi dengan banyaknya anggota rumah tangga yang telah disesuaikan dengan paritas daya beli. Penghitungan paritas daya beli mengacu pada Kota Jakarta Selatan, sementara tahun rujukan adalah 2012. </li><li>
+        Data pengeluaran dapat mengungkap tentang pola konsumsi rumaht angga secara umum menggunakan indikator proporsi pengeluaran untuk makanan dan non makanan. Komposisi pengeluaran rumah tangga dapat dijadikan ukuran untuk menilai tingkat kesejahteraan ekonomi penduduk, makin rendah persentase pengeluaran untuk makanan terhadap total pengeluaran makin membaik tingkat kesejahteraan. </li><li>
+        Pengeluaran rumah tangga dibedakan menurut kelompok makanan dan bukan makanan. Perubahan pendapatan seseorang akan berpengaruh pada pergeseran pola pengeluaran. Semakin tinggi pendapatan, semakin tinggi pengeluaran bukan makanan. Dengan demikian, pola pengeluaran dapat dipakai sebagai salah satu alat untuk mengukur tingkat kesejahteraan penduduk, dimana perubahan komposisinya digunakan sebagai petunjuk perubahan tingkat kesejahteraan </li><li>
+        Pengeluaran per kapita Indonesia pada tahun 2016 sebesar Rp10.150.000. Artinya, secara rata-rata pengeluaran penduduk Indonesia selama setahun adalah Rp10.150.000. </li></ul><br> 
+ Sumber: https://sirusa.bps.go.id/sirusa/index.php/indikator/197")  }
+     else if (input$data == 'Persentase Penduduk Miskin (%)'){
+  HTML("<b> Persentase Penduduk Miskin (%) </b> <br>
+  <ul><li> Persentase penduduk miskin yang berada di bawah garis kemiskinan. Headcount Index secara sederhana mengukur proporsi yang dikategorikan miskin.</li><li>
+  Angka yang ditunjukkan oleh HCI-P0 menunjukkan proporsi penduduk miskin di suatu wilayah. Persentase penduduk miskin yang tinggi menunjukkan bahwa tingkat kemiskinan di suatu wilayah juga tinggi. </li></ul><br>
+  Sumber : https://sirusa.bps.go.id/sirusa/index.php/indikator/18 
+  ")
+     }
+       else if (input$data == 'Gini Ratio'){
+  HTML("<b> Gini Ratio </b> <br>
+  <ul><li> Indikator yang menunjukkan tingkat ketimpangan pengeluaran secara menyeluruh. </li><li>
+ Nilai Rasio Gini berkisar antara 0 hingga 1. Nilai Rasio Gini yang semakin mendekati 1 mengindikasikan tingkat ketimpangan yang semakin tinggi.  Rasio Gini bernilai 0 menunjukkan adanya  pemerataan pendapatan yang sempurna, atau setiap orang memiliki pendapatan yang sama. Sedangkan, Rasio Gini bernilai 1 menunjukkan ketimpangan yang sempurna, atau satu orang memiliki segalanya sementara orang-orang lainnya tidak memiliki apa-apa. Dengan kata lain, Rasio Gini diupayakan agar mendekati 0 untuk menunjukkan adanya pemerataan distribusi pendapatan antar penduduk. </li></ul><br>
+  Sumber: https://sirusa.bps.go.id/sirusa/index.php/indikator/999 
+  ")
+       }
+         else if (input$data == 'Gini Ratio'){
+  HTML("<b> Gini Ratio </b> <br>
+  <ul><li> Indikator yang menunjukkan tingkat ketimpangan pengeluaran secara menyeluruh. </li><li>
+ Nilai Rasio Gini berkisar antara 0 hingga 1. Nilai Rasio Gini yang semakin mendekati 1 mengindikasikan tingkat ketimpangan yang semakin tinggi.  Rasio Gini bernilai 0 menunjukkan adanya  pemerataan pendapatan yang sempurna, atau setiap orang memiliki pendapatan yang sama. Sedangkan, Rasio Gini bernilai 1 menunjukkan ketimpangan yang sempurna, atau satu orang memiliki segalanya sementara orang-orang lainnya tidak memiliki apa-apa. Dengan kata lain, Rasio Gini diupayakan agar mendekati 0 untuk menunjukkan adanya pemerataan distribusi pendapatan antar penduduk. </li></ul><br>
+  Sumber: https://sirusa.bps.go.id/sirusa/index.php/indikator/999 
+  ")
+         }
+           else if (input$data == 'Garis Kemiskinan (Rupiah)'){
+  HTML("<b> Garis Kemiskinan </b> <br>
+  <ul><li> Representasi dari jumlah rupiah minimum yang dibutuhkan untuk memenuhi kebutuhan pokok minimum makanan yang setara dengan 2100 kilokalori per kapita per hari dan kebutuhan pokok bukan makanan. </li><li>
+ Garis kemiskinan digunakan untuk mengukur beberapa indikator kemiskinan, seperti jumlah dan persentase penduduk miskin (headcount index-Po), indeks kedalaman kemiskinan (poverty gap index-P1), dan indeks keparahan kemiskinan (poverty severity index-P2). </li><li>
+Penduduk yang memiliki rata-rata pengeluaran konsumsi per kapita per bulan di bawah garis kemiskinan dikategorikan sebagai penduduk miskin. </li></ul><br>
+  Sumber: https://sirusa.bps.go.id/sirusa/index.php/indikator/50
+  ")
+         }
+           else if (input$data == 'Jumlah Penduduk Miskin (Ribu Jiwa)'){
+  HTML("<b> Jumlah Penduduk Miskin (Ribu Jiwa) </b> <br>
+  <ul><li> Jumlah penduduk yang memiliki rata-rata pengeluaran perkapita perbulan di bawah garis kemiskinan. </li></ul><br>
+  Sumber: https://sirusa.bps.go.id/sirusa/index.php/variabel/7556 
+  ")
+           }
+            else if (input$data == 'Kedalaman Kemiskinan'){
+  HTML("<b> Kedalaman Kemiskinan </b> <br>
+  <ul><li> Ukuran rata-rata kesenjangan pengeluaran masing-masing penduduk miskin terhadap garis kemiskinan. </li><li>
+ Nilai agregat dari poverty gap index menunjukkan biaya mengentaskan kemiskinan dengan membuat target transfer yang sempurna terhadap penduduk miskin dalam hal tidak adanya biaya transaksi dan faktor penghambat. Semakin kecil nilai poverty gap index, semakin besar potensi ekonomi untuk dana pengentasan kemiskinan berdasarkan identifikasi karakteristik penduduk miskin dan juga untuk target sasaran bantuan dan program. </li><li>
+Penurunan nilai indeks Kedalaman Kemiskinan mengindikasikan bahwa rata-rata pengeluaran penduduk miskin cenderung makin mendekati garis kemiskinan dan ketimpangan pengeluaran penduduk miskin juga semakin menyempit. </li></ul><br>
+  Sumber : https://sirusa.bps.go.id/sirusa/index.php/indikator/19
+  ")
+            }
+             else if (input$data == 'Keparahan Kemiskinan'){
+  HTML("<b> Keparahan Kemiskinan </b> <br>
+  <ul><li> Indeks yang memberikan informasi mengenai gambaran penyebaran pengeluaran di antara penduduk miskin. </li><li>
+ 	Memberikan informasi yang saling melengkapi pada insiden kemiskinan. Sebagai contoh, mungkin terdapat kasus bahwa beberapa kelompok penduduk miskin memiliki insiden kemiskinan yang tinggi tetapi jurang kemiskinannya (poverty gap) rendah, sementara kelompok penduduk lain mempunyai insiden kemiskinan yang rendah tetapi memiliki jurang kemiskinan yang tinggi bagi penduduk yang miskin. </li><li>
+Semakin tinggi nilai indeks, semakin tinggi ketimpangan pengeluaran di antara penduduk miskin. </li></ul><br>
+  Sumber : https://sirusa.bps.go.id/sirusa/index.php/indikator/20
+  ")
+             }
+              else if (input$data == 'Tingkat Partisipasi Angkatan Kerja (%)'){
+  HTML("<b> Tingkat Partisipasi Angkatan Kerja (%) </b> <br>
+  <ul><li> Persentase penduduk usia 15 tahun keatas yang merupakan angkatan kerja. </li><li>
+ 	TPAK digunakan untuk mengindikasikan besarnya persentase penduduk usia kerja yang aktif secara ekonomi disuatu negara/wilayah.
+ </li><li>
+Semakin tinggi TPAK menunjukkan bahwa semakin tinggi pula pasokan tenaga kerja (labour supply) yang tersedia untuk memproduksi barang dan jasa dalam suatu perekonomian. </li></ul><br>
+  Sumber : https://sirusa.bps.go.id/sirusa/index.php/indikator/51
+  ")
+              }
+                else if (input$data == 'Tingkat Pengangguran Terbuka (%)'){
+  HTML("<b> Tingkat Pengangguran Terbuka </b> <br>
+  <ul><li> Persentase jumlah pengangguran terhadap jumlah angkatankerja. Angkatan Kerja adalah penduduk usia kerja (15 tahun ke atas) yang bekerja atau punya pekerjaan namun sementara tidak bekerja, dan penggangguran.Pengangguran yaitu: (1) penduduk yang aktif mencari pekerjaan, (2) penduduk yang sedang mempersiapkan usaha/pekerjaan baru, (3) penduduk yang tidak mencari pekerjaan karena merasa tidak mungkin mendapat pekerjaan, (4) kelompok penduduk yang tidak aktif mencari pekerjaan dengan alasan sudah mempunyai pekerjaan tetapi belum mulai bekerja. </li><li>
+ 	TPT digunakan untuk mengindikasikan besarnya persentase angkatan kerja yang termasuk dalam pengangguran. </li><li>
+TPT menunjukkan Menunjukkan kemampuan ekonomi untuk menciptakan lapangan kerja yang mampu menyerap persediaan (supply) tenaga kerja yang ada. Semakin tinggi nilai indikator ini, semakin banyak persediaan tenaga kerja yang tidak termanfaatkan. Indikator ini dapat memberikan sinyal tentang kinerja pasar kerja dan berlangsungnya kondisi ekonomi tertentu, seperti resesi, perubahan siklus bisnis dan teknologi, dan lain-lain. Pembedaan menurut jenis kelamin, kelompok umur, dan tingkat pendidikan dapat menggambarkan kesenjangan keterserapan di lapangan kerja antar kelompok tersebut. </li></ul><br>
+  Sumber : https://sirusa.bps.go.id/sirusa/index.php/indikator/44
+  ")
+                }
+                  else if (input$data == 'Indeks Pembangunan Manusia'){
+  HTML("<b> Indeks Pembangunan Manusia </b> <br>
+  <ul><li> Menurut UNDP, IPM didefinisikan sebagai proses perluasan pilihan bagi penduduk (a process of enlarging the choice of people). IPM mengukur pencapaian hasil pembangunan dari suatu daerah/wilayah dalam tiga dimensi dasar pembangunan yaitu: lamanya hidup, pengetahuan/tingkat pendidikan dan standard hidup layak. </li><li>
+Untuk mengklasifikasikan apakah sebuah negara adalah negara maju, negara berkembang, atau negara terbelakang dan juga untuk mengukur pengaruh dari kebijaksanaan ekonomi terhadap kualitas hidup. </li><li>
+Angka IPM memberikan gambaran komprehensip mengenai tingkat pencapaian pembangunan manusia sebagai dampak dari kegiatan pembangunan yang dilakuan oleh suatu negara/daerah. Semakin tinggi nilai IPM suatu negara/daerah, menunjukkan pencapaian pembangunan manusianya semakin baik.</li></ul><br>
+  Sumber : https://sirusa.bps.go.id/sirusa/index.php/indikator/46
+  ")
+                  }
+                   else if (input$data == 'Harapan Lama Sekolah (Tahun)'){
+  HTML("<b> Harapan Lama Sekolah </b> <br>
+  <ul><li> Menurut UNDP, IPM didefinisikan sebagai proses perluasan pilihan bagi pendudAngka Harapan Lama Sekolah (HLS) didefinisikan sebagai lamanya sekolah (dalam tahun) yang diharapkan akan dirasakan oleh anak pada umur tertentu di masa mendatang. </li><li>
+HLS dapat digunakan untuk mengetahui kondisi pembangunan sistem pendidikan di berbagai jenjang. </li><li>
+	
+Angka HLS menunjukkan peluang anak usia 7 tahun ke atas untuk mengenyam pendidikan formal pada waktu tertentu. HLS Indonesia pada tahun 2016 sebesar 12,72 tahun. Artinya, secara rata-rata anak usia 7 tahun yang masuk jenjang pendidikan formal pada tahun 2016 memiliki peluang untuk bersekolah selama 12,72 tahun atau setara dengan Diploma I. </li></ul><br>
+  Sumber : https://sirusa.bps.go.id/sirusa/index.php/indikator/1016
+  ")
+                   }
+  else if (input$data == 'Rata-rata Lama Sekolah (Tahun)'){
+  HTML("<b> Rata-rata Lama Sekolah </b> <br>
+  <ul><li> Jumlah tahun belajar penduduk usia 15 tahun ke atas yang telah diselesaikan dalam pendidikan formal (tidak termasuk tahun yang mengulang). Untuk menghitung Rata-rata Lama Sekolah dibutuhkan informasi: a. Partsipasi sekolah b. Jenjang dan jenis pendidikan yang pernah/sedang diduduki c. Ijasah tertinggi yang dimiliki d. Tingkat/kelas tertinggi yang pernah/sedang diduduki. </li><li>
+Untuk melihat kualitas penduduk dalam hal mengenyam pendidikan formal. </li><li>
+Tingginya angka Rata-rata Lama Sekolah (MYS) menunjukkan jenjang pendidikan yang pernah/sedang diduduki oleh seseorang. Semakin tinggi angka MYS maka semakin lama/tinggi jenjang pendidikan yang ditamatkannya.</li></ul><br>
+  Sumber : https://sirusa.bps.go.id/sirusa/index.php/indikator/11
+  ")
+  }
+   else if (input$data == 'Usia Harapan Hidup (Tahun)'){
+  HTML("<b> Usia Harapan Hidup </b> <br>
+  <ul><li> Usia Harapan Hidup saat Lahir (UHH) didefinisikan sebagai rata-rata perkiraan banyak tahun yang dapat ditempuh oleh seseorang sejak lahir. </li><li>
+UHH mencerminkan derajat kesehatan suatu masyarakat. </li><li>
+UHH Indonesia pada tahun 2016 sebesar 70,90 tahun. Artinya, secara rata-rata bayi yang baru lahir pada tahun 2016 memiliki peluang untuk bertahan hidup sampai dengan 70,90 tahun. </li></ul><br>
+  Sumber : https://sirusa.bps.go.id/sirusa/index.php/indikator/1060
+  ")
+         }
+  else {
+      cat('a')
+  }
+})
+
+renderUI(penjelasan2())
+```
+
+
+Analisis Dua Variabel {data-navmenu=Analisis-Pilihan}
+====================================================
+
+Silahkan Pilih {.sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+selectInput('model','Select Model: ', c('Gini Ratio dan PDRB Perkapita (Kurva Kuznet)','Pengangguran dan Pertumbuhan Ekonomi (Hukum Okun)', 'PDRB Perkapita dan Pengeluaran Konsumsi Perkapita (Indeks Eksploitasi)','Pengangguran Tidak Kentara'))
+
+selectInput('method','Metode 
+(Loess = Local Regression dan LM = Linear Model)',c('lm','loess'))
+```
+
+Outputs {.tabset}
+-----------------------------------------------------------------------
+
+### Grafik
+
+```{r}
+pilihan <- reactive({
+  if (input$model == 'Gini Ratio dan PDRB Perkapita (Kurva Kuznet)'){
+  if (input$method =='lm'){
+    p <- ggplot(dataset, aes(y=`Gini Ratio`,x=`PDRB Perkapita (Juta Rupiah)`)) +
+    geom_point(size=4,aes(color=Tahun)) + geom_smooth(method=paste0('',input$method,'')) +
+    scale_colour_gradient(low='#B2E7E8',high='#304D63') +
+      stat_poly_eq(parse=T, aes(label = ..eq.label..), formula=y~x)
+    print(p)} 
+    else {
+          p <- ggplot(dataset, aes(y=`Gini Ratio`,x=`PDRB Perkapita (Juta Rupiah)`)) +
+    geom_point(size=4,aes(color=Tahun)) + geom_smooth(method=paste0('',input$method,'')) +
+    scale_colour_gradient(low='#B2E7E8',high='#304D63')
+    print(p)}
+    } 
+  else if (input$model == 'PDRB Perkapita dan Pengeluaran Konsumsi Perkapita (Indeks Eksploitasi)'){
+    if (input$method == 'lm'){
+    p <- ggplot(dataset,aes(Tahun)) +
+    geom_line(aes(y=`Konsumsi Perkapita (Juta Rupiah)`,
+                  color='Konsumsi Perkapita'),size=1) +
+    geom_line(aes(y=`PDRB Perkapita (Juta Rupiah)`,
+                  color='PDRB Perkapita'),size=1) +
+          scale_x_continuous(breaks = c(2010:2021)) +
+#          scale_y_continuous(breaks = c(0,5,10,15,20,25,30,35,40,45,50,55,60)) +
+          labs(y='Juta Rupiah') +
+      guides(color=guide_legend(title='Keterangan')) +
+      theme(legend.position = 'bottom')
+        print(p)} 
+    else {    
+          p <- ggplot(dataset,aes(Tahun)) +
+          geom_line(aes(y=`Konsumsi Perkapita (Juta Rupiah)`,
+                  color='Konsumsi Perkapita'),size=1) +
+          geom_line(aes(y=`PDRB Perkapita (Juta Rupiah)`,
+                  color='PDRB Perkapita'),size=1) +
+          scale_x_continuous(breaks = c(2010:2021)) +
+#          scale_y_continuous(breaks = c(0,5,10,15,20,25,30,35,40,45,50,55,60)) +
+          labs(y='Juta Rupiah') +
+      guides(color=guide_legend(title='Keterangan')) +
+      theme(legend.position = 'bottom')
+          print(p)
+        }}
+      else if (input$model == 'Pengangguran Tidak Kentara'){
+    if (input$method == 'lm'){
+    p <- ggplot(dataset,aes(Tahun)) +
+    geom_line(aes(y=`Perubahan Tingkat Pengangguran Terbuka (%)`,
+                  color='Perubahan TPT (%)'),size=1) +
+    geom_line(aes(y=`Perubahan Tingkat Partisipasi Angkatan Kerja (%)`,
+                  color='Perubahan TPAK (%)'),size=1) +
+          scale_x_continuous(breaks = c(2010:2021)) +
+          scale_y_continuous(breaks = c(-10:10)) +
+      geom_hline(yintercept = 0) +
+          labs(y='Persentase (%)') +
+      guides(color=guide_legend(title='Keterangan')) +
+      theme(legend.position = 'bottom')
+        print(p)} else {    
+     p <- ggplot(dataset,aes(Tahun)) +
+    geom_line(aes(y=`Perubahan Tingkat Pengangguran Terbuka (%)`,
+                  color='Perubahan TPT (%)'),size=1) +
+    geom_line(aes(y=`Perubahan Tingkat Partisipasi Angkatan Kerja (%)`,
+                  color='Perubahan TPAK (%)'),size=1) +
+          scale_x_continuous(breaks = c(2010:2021)) +
+          scale_y_continuous(breaks = c(-10:10)) +
+             geom_hline(yintercept = 0) +
+          labs(y='Persentase (%)') +
+      guides(color=guide_legend(title='Keterangan')) +
+      theme(legend.position = 'bottom')
+          print(p)
+        }
+  } 
+  else if (input$model == 'Pertumbuhan Ekonomi dan Government Size') {
+      if (input$method == 'lm') {
+         p <- ggplot(dataset, aes(y=`Pertumbuhan Ekonomi (%)`,x=`Government Size [G/PDRB] (%)`)) +
+    geom_point(size=4,aes(color=Tahun)) + geom_smooth(method=paste0('',input$method,'')) +
+    scale_colour_gradient(low='#B2E7E8',high='#304D63') +
+          stat_poly_eq(parse=T, aes(label = ..eq.label..), formula=y~x)
+    print(p)
+      } else {
+        p <- ggplot(dataset, aes(y=`Pertumbuhan Ekonomi (%)`,x=`Government Size [G/PDRB] (%)`)) +
+    geom_point(size=4,aes(color=Tahun)) + geom_smooth(method=paste0('',input$method,'')) +
+    scale_colour_gradient(low='#B2E7E8',high='#304D63')
+    print(p)
+    }}
+      else{ 
+        if(input$method == 'lm'){
+  p <- ggplot(dataset, aes(y=`Perubahan Tingkat Pengangguran Terbuka (%)`,x=`Pertumbuhan Ekonomi (%)`)) +
+    geom_point(size=4,aes(color=Tahun)) + geom_smooth(method=paste0('',input$method,''),se=F) +
+    scale_colour_gradient(low='#B2E7E8',high='#304D63') +
+          stat_poly_eq(parse=T, aes(label = ..eq.label..), formula=y~x)
+    print(p)}
+  else {
+     p <- ggplot(dataset, aes(y=`Perubahan Tingkat Pengangguran Terbuka (%)`,x=`Pertumbuhan Ekonomi (%)`)) +
+    geom_point(size=4,aes(color=Tahun)) + geom_smooth(method=paste0('',input$method,''),se=F) +
+    scale_colour_gradient(low='#B2E7E8',high='#304D63')    
+      print(p)}}})
+
+renderPlot({
+  theme_set(theme_bw())
+  pilihan()})
+
+#ggplot(dataset, aes(y= `Gini Ratio`, x= `PDRB Perkapita (Juta Rupiah)`)) + geom_point(size=4,aes(color=Tahun)) +
+# geom_smooth(method=paste0('',input$method,''),se=F)
+```
+
+Detail {.tabset}
+-----------------------------------------------------------------------
+
+### Tabel
+
+```{r}
+pilihan_data <- reactive({if(input$model == 'Gini Ratio dan PDRB Perkapita (Kurva Kuznet)'){
+  dataset %>% select(Tahun, `Gini Ratio`, `PDRB Perkapita (Juta Rupiah)`)} 
+  else if (input$model == 'PDRB Perkapita dan Pengeluaran Konsumsi Perkapita (Indeks Eksploitasi)'){
+    dataset %>% select(Tahun, `PDRB Perkapita (Juta Rupiah)`,`Konsumsi Perkapita (Juta Rupiah)`) %>% 
+      mutate(`Indeks Eksploitasi (%)` = round((1-(`Konsumsi Perkapita (Juta Rupiah)`/`PDRB Perkapita (Juta Rupiah)`))*100,2))
+  } 
+    else if (input$model == 'Pengangguran Tidak Kentara'){
+    dataset %>% select(Tahun, `Perubahan Tingkat Pengangguran Terbuka (%)`,`Perubahan Tingkat Partisipasi Angkatan Kerja (%)`)
+  } else if (input$model == 'Pertumbuhan Ekonomi dan Government Size') {
+        dataset %>% select(Tahun, `PDRB Perkapita (Juta Rupiah)`,`Government Size [G/PDRB] (%)`)
+  }
+  else {
+    dataset %>% select(Tahun, `Perubahan Tingkat Pengangguran Terbuka (%)`, `Pertumbuhan Ekonomi (%)`)}
+})
+
+renderDT(
+  DT::datatable(pilihan_data(),rownames=F,extensions = 'Buttons', options = list(
+    scrollY="400px", scrollX=TRUE,
+    dom = 'Bfrtip',
+    buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+    pageLength=20))
+)
+```
+
+### Penjelasan Indikator
+
+````{r results='asis',echo=FALSE}
+penjelasan <- reactive({if(input$model == 'Gini Ratio dan PDRB Perkapita (Kurva Kuznet)'){
+  HTML("<b> Kurva Kuznet dan Gelombang Kuznet </b> <br>
+       <ul><li> Kurva kuznet mengekspresikan sebuah hipotesis dari Ekonom Simon Kuznet di tahun 1950 dan 1960an </li><li>
+        Pada masa awal pembangunan, kekuatan pasar akan meningkatkan ketimpangan. Di tahap yang selanjutnya pembangunan akan mengurangi ketimpangan </li><li>
+        Untuk melihat Pola Kurva Kuznet, disarankan menggunakan metode loess</li></ul><br> 
+       <b> Gelombang Kuznet</b> <br>
+ <ul><li>Terkadang pembangunan tidak serta merta menurunkan Ketimpangan. Revolusi teknologi diawal fase, akan menimbulkan ketimpangan baru.</li><li>
+  Terkadang pembangunan tidak serta merta menurunkan Ketimpangan. Revolusi teknologi diawal fase, akan menimbulkan ketimpangan baru.</li><li>
+  Fenomena tersebut dijelaskan dalam grafik Gelombang Kuznet</li><li>
+ Untuk melihat Pola Gelombang Kuznet, disarankan menggunakan metode 'loess'</li></ul><br>
+ Sumber : http://workingpapers.bappenas.go.id/index.php/bwp/article/view/67")}
+  else if (input$model == 'PDRB Perkapita dan Pengeluaran Konsumsi Perkapita (Indeks Eksploitasi)'){
+  HTML("<b> Indeks Eksploitasi Ekonomi </b> <br>
+  <ul><li> Indeks Eksploitasi Ekonomi digunakan untuk mengukur tingkat eksploitasi ekonomi oleh pemerintah pusat atau investor/perusahaan luar negeri (Kuncoro, 2013) </li><li>
+       Analisis ini digunakan untuk daerah di Indonesia yang kaya sumber daya alam seperti minyak, gas, dan bahan tambang tapi punya masalah dengan masalah pembangunan seperti ketimpangan pendapatan dan keadilan sosial (Mubyarto, 2005) </li><li>
+  Indeks ini dihitung dengan membandingkan antara PDRB Perkapita dengan Konsumsi Perkapita </li></ul><br>
+  Sumber : https://www.ijbel.com/wp-content/uploads/2017/09/ECON-5.pdf
+  ")
+  } 
+    else if (input$model == 'Pengangguran dan Pertumbuhan Ekonomi (Hukum Okun)'){
+   HTML("<b> Pengangguran dan Pertumbuhan Ekonomi (Hukum Okun) </b> <br>
+  <ul><li> Untuk menyederhanakan analisis, Okun mengasumsikan bahwa tingkat pengangguran dapat berfungsi sebagai pengganti variabel dari jumlah tenaga kerja yang digunakan dalam perekonomian. </li><li>
+       Berdasarkan Hukum Okun, jumlah pengangguran berhubungan negatif dengan tingkat pertumbuhan ekonomi suatu negara. Adanya pertumbuhan dalam Gross Domestic Product (GDP) yang mendekati 2 persen akan mengurangi pengangguran sebesar 1 persen (Mankiw, 2007). </li></ul><br>
+  Sumber: https://jimfeb.ub.ac.id/index.php/jimfeb/article/view/526 
+  ")
+  } else if (input$model == 'Pertumbuhan Ekonomi dan Government Size') {
+  cat('a')
+  }
+  else {
+      cat('a')
+  }
+})
+
+renderUI(penjelasan())
+```  
+
+### Penjelasan Gambar {.tabset}
+
+```{r results='asis',echo=FALSE}
+gambar <- reactive({if(input$model == 'Gini Ratio dan PDRB Perkapita (Kurva Kuznet)'){list(src = "kurva kuznet.jpg",
+                 alt = "Kurva Kuznet"
+            )} else
+  print('a')})
+renderImage(gambar())
+```
+
+
+Tipologi Klasen {data-navmenu=Analisis-PDRB}
+====================================================
+
+Column {.tabset}
+-----------------------------------------------------------------------
+
+### Animasi Tipologi Klassen
+
+![](anim.gif)
+
+### Tabel
+
+```{r}
+renderDT(
+  DT::datatable(kab_klas, rownames=F,extensions = 'Buttons', options = list(
+    scrollY="400px", scrollX=TRUE, scrollY = TRUE,
+    dom = 'Bfrtip',
+    buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+    pageLength=20))
+)
+```
+
+### Penjelasan Tipologi Klassen
+
+**Tipologi Klassen**
+
+Konsep dan Definisi
+
+- Melihat gambaran pola dan struktur pertumbuhan ekonomi suatu daerah.
+- Dilakukan dengan membandingkan pertumbuhan ekonomi suatu daerah dengan pertumbuhan ekonomi daerah acuan (nasional) dan membandingkan PDRB perkapita suatu daerah dengan PDRB perkapita daerah yang menjadi acuan atau PDB perkapita (secara nasional).
+- Tipologi Klassen dengan pendekatan sektoral menghasilkan empat klasifikasi dengan karakteristik berbeda.
+
+Interpretasi
+
+- **Daerah maju dan tumbuh Cepat (Kuadran I)**. Daerah dengan laju pertumbuhan PDRB lebih besar dari pertumbuhan daerah acuan atau nasional dan memiliki PDRB per kapita lebih besar dari PDRB per kapita daerah acuan atau nasional
+- **Daerah sedang berkembang (Kuadran II)**. Daerah dengan laju pertumbuhan PDRB lebih tinggi dari pertumbuhan PDRB daerah acuan atau nasional, tetapi PDRB per kapitanya lebih kecil dari PDRB per kapita daerah acuan atau nasional.
+- **Daerah maju tetapi tertekan (Kuadran III)**. Daerah dengan laju pertumbuhan PDRB lebih rendah dari pertumbuhan PDRB daerah acuan atau nasional, tetapi memiliki PDRB per kapita lebih besar dari PDRB per kapita daerah acuan atau nasional.
+- **Daerah relatif tertingggal (Kuadran IV)**. Daerah dengan laju
+pertumbuhan PDRB lebih rendah dari pertumbuhan PDRB daerah acuan atau nasional, dan sekaligus PDRB per kapita yang lebih kecil dari PDRB per kapita daerah acuan atau nasional.
+
+Sumber : Materi Pembinaan SNA BPS Tahun 2015
+
+Shift Share {data-navmenu=Analisis-PDRB}
+====================================================
+
+Column {data-width=500 .sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+sidebarPanel(
+checkboxGroupInput("ketSS", 
+                              h3("Lapangan Usaha"), 
+                              choices = unique(SS$Lapangan.Usaha),
+                              selected = c('PRODUK DOMESTIK REGIONAL BRUTO',
+                                           'A. Pertanian, Kehutanan, dan Perikanan',
+                                           'B. Pertambangan dan Penggalian',
+                                           'C. Industri Pengolahan',
+                                           'D. Pengadaan Listrik dan Gas',
+                                           'E. Pengadaan Air, Pengelolaan Sampah, Limbah dan Daur Ulang',
+                                           'F. Konstruksi',
+                                           'G. Perdagangan Besar dan Eceran; Reparasi Mobil dan Sepeda Motor',
+                                           'H. Transportasi dan Pergudangan',
+                                           'I. Penyediaan Akomodasi dan Makan Minum',
+                                           'J. Informasi dan Komunikasi',
+                                           'K. Jasa Keuangan dan Asuransi',
+                                           'L. Real Estate',
+                                           'M,N. Jasa Perusahaan',
+                                           'O. Administrasi Pemerintahan, Pertahanan dan Jaminan Sosial Wajib',
+                                           'P. Jasa Pendidikan',
+                                           'Q. Jasa Kesehatan dan Kegiatan Sosial',
+                                           'R,S,T,U. Jasa lainnya')),
+width = 20)
+```
+
+Column {.tabset}
+-----------------------------------------------------------------------
+
+### Grafik Analisis Shift Share
+
+```{r}
+renderPlot({
+sub <- subset(SS, subset = Lapangan.Usaha %in% input$ketSS)
+theme_set(theme_bw())
+ggplot(data=sub %>% filter(Lapangan.Usaha == input$ketSS),aes(x=Tahun, y=SS, color=Lapangan.Usaha)) + geom_line() + geom_point() +
+  scale_x_continuous(breaks=c(2010:2020)) +
+  scale_y_continuous(breaks=c(-30:40)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_color_ucscgb() +
+  geom_hline(yintercept = 0, linetype='dashed',size=1,color='black') +
+  labs(y='Shift Share (%)')
+  })
+```
+
+### Tabel Analisis Shift Share
+
+```{r}
+tSS <- reactive({
+subset(SS, subset = Lapangan.Usaha %in% input$ketSS) %>% 
+  mutate(Tahun = round(Tahun,0),
+         SS = round(SS,2)) %>% 
+    select(Lapangan.Usaha, Tahun, Shift_Share = SS)
+})
+  
+renderDT(
+  DT::datatable(tSS(),rownames=F,extensions = 'Buttons', options = list(
+    scrollY="400px", scrollX=TRUE,
+    dom = 'Bfrtip',
+    buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+    pageLength=20))
+)
+```
+
+### Penjelasan Analisis Shift Share
+
+**Analisis Shift Share**
+
+Konsep Definisi
+
+- Mengetahui tingkat perkembangan ekonomi dan kecenderungan transformasi struktur perekonomian wilayah.
+- Mengetahui kemampuan kompetitif lapangan usaha di
+suatu wilayah dan lapangan usaha unggulan masing-masing wilayah (misal: kecamatan, kab/kot, propinsi).
+- Melihat sumbangan (share) lapangan usaha/komponen terhadap perekonomian wilayah, dan yang mengalami kemajuan selama periode pengukuran.
+- Semakin tinggi nilai Shift Share menandakan bahwa sektor tersebut adalah sektor yang paling unggul.
+
+Rumusan
+
+$$
+SS = G + (G_i-G) + (g_i - g) \\
+~ \\
+Keterangan: \\
+G = Pertumbuhan~ekonomi~provinsi \\
+g = Pertumbuhan~ekonomi~kota \\
+G_i = Pertumbuhan~ekonomi~provinsi~lapangan~usaha-i \\
+g_i = Pertumbuhan~ekonomi~kota~lapangan~usaha-i
+$$
+
+Sumber : Materi Pembinaan SNA BPS Tahun 2015
+
+Location Quotient {data-navmenu=Analisis-PDRB}
+====================================================
+
+Column {data-width=500 .sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+sidebarPanel(
+checkboxGroupInput("ketLQ", 
+                              h3("Lapangan Usaha"), 
+                              choices = unique(LQ$Lapangan.Usaha),
+                              selected = c('PRODUK DOMESTIK REGIONAL BRUTO',
+                                           'A. Pertanian, Kehutanan, dan Perikanan',
+                                           'B. Pertambangan dan Penggalian',
+                                           'C. Industri Pengolahan',
+                                           'D. Pengadaan Listrik dan Gas',
+                                           'E. Pengadaan Air, Pengelolaan Sampah, Limbah dan Daur Ulang',
+                                           'F. Konstruksi',
+                                           'G. Perdagangan Besar dan Eceran; Reparasi Mobil dan Sepeda Motor',
+                                           'H. Transportasi dan Pergudangan',
+                                           'I. Penyediaan Akomodasi dan Makan Minum',
+                                           'J. Informasi dan Komunikasi',
+                                           'K. Jasa Keuangan dan Asuransi',
+                                           'L. Real Estate',
+                                           'M,N. Jasa Perusahaan',
+                                           'O. Administrasi Pemerintahan, Pertahanan dan Jaminan Sosial Wajib',
+                                           'P. Jasa Pendidikan',
+                                           'Q. Jasa Kesehatan dan Kegiatan Sosial',
+                                           'R,S,T,U. Jasa lainnya')),
+width = 20)
+```
+
+Column {.tabset}
+-----------------------------------------------------------------------
+
+### Grafik Analisis Location Quotient
+
+```{r}
+renderPlot({
+sub <- subset(LQ, subset = Lapangan.Usaha %in% input$ketLQ)
+theme_set(theme_bw())
+ggplot(data=sub %>% filter(Lapangan.Usaha == input$ketLQ),aes(x=Tahun, y=LQ, color=Lapangan.Usaha)) + geom_line() + geom_point() +
+  scale_x_continuous(breaks=c(2010:2020)) +
+#  scale_y_continuous(breaks=c(-30:40)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_color_ucscgb() +
+  geom_hline(yintercept = 1, linetype='dashed',size=1,color='black') +
+  labs(y='Location Quotient')
+  })
+```
+
+### Tabel Analisis Location Quotient
+
+```{r}
+tLQ <- reactive({
+subset(LQ, subset = Lapangan.Usaha %in% input$ketLQ) %>% 
+  mutate(Tahun = round(Tahun,0),
+         LQ = round(LQ,2)) %>% 
+    select(Lapangan.Usaha, Tahun, Location_Quotient = LQ)
+})
+  
+renderDT(
+  DT::datatable(tLQ(),rownames=F,extensions = 'Buttons', options = list(
+    scrollY="400px", scrollX=TRUE,
+    dom = 'Bfrtip',
+    buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+    pageLength=20))
+)
+```
+
+### Penjelasan Location Quotient
+
+**Location Quotient**
+
+Konsep Definisi
+
+- Untuk menentukan kapasitas ekspor perekonomian daerah dan
+derajat self-sufficiency suatu lapangan usaha.
+
+Rumusan
+
+$$
+LQ = \frac{v_i/v_t}{V_i/V_t} \\
+~\\
+Keterangan:\\
+v_i = PDRB~lapangan~usaha-i~kota\\
+v_t = Total~PDRB~kota\\
+V_i = PDRB~lapangan~usaha-i~provinsi\\
+V_t = Total~PDRB~provinsi\\
+$$
+
+Interpretasi
+
+Hasil Perhitungan LQ menghasilkan dua kriteria yaitu:
+- LQ > 1, produksi komoditas di suatu wilayah dapat memenuhi kebutuhan sendiri, bahkan diekspor ke luar.
+- LQ <= 1,  produksi komoditas di suatu wilayah tidak dapat memenuhi kebutuhan sendiri sehingga perlu pasokan atau impor dari luar.
+
+Keterangan Tambahan 
+
+-  Industri Basis merupakan penggerak utama dalam pertumbuhan suatu wilayah.
+- Semakin besar ekspor suatu wilayah semakin maju pertumbuhan wilayah tersebut.
+- Setiap perubahan yang terjadi pada Industri basis menimbulkan efek ganda ( multiplier effect ) dalam perekonomian regional.
+
+Sumber : Materi Pembinaan SNA BPS Tahun 2015
+
+Sumber Pertumbuhan Ekonomi Lapangan Usaha {data-navmenu=Analisis-PDRB}
+====================================================
+
+Column {data-width=500 .sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+sidebarPanel(
+checkboxGroupInput("ketsoglapus", 
+                              h3("Lapangan Usaha"), 
+                              choices = unique(SOG_lapus$Lapangan.Usaha),
+                              selected = c('A. Pertanian, Kehutanan, dan Perikanan',
+                                           'B. Pertambangan dan Penggalian',
+                                           'C. Industri Pengolahan',
+                                           'D. Pengadaan Listrik dan Gas',
+                                           'E. Pengadaan Air, Pengelolaan Sampah, Limbah dan Daur Ulang',
+                                           'F. Konstruksi',
+                                           'G. Perdagangan Besar dan Eceran; Reparasi Mobil dan Sepeda Motor',
+                                           'H. Transportasi dan Pergudangan',
+                                           'I. Penyediaan Akomodasi dan Makan Minum',
+                                           'J. Informasi dan Komunikasi',
+                                           'K. Jasa Keuangan dan Asuransi',
+                                           'L. Real Estate',
+                                           'M,N. Jasa Perusahaan',
+                                           'O. Administrasi Pemerintahan, Pertahanan dan Jaminan Sosial Wajib',
+                                           'P. Jasa Pendidikan',
+                                           'Q. Jasa Kesehatan dan Kegiatan Sosial',
+                                           'R,S,T,U. Jasa lainnya')),
+width = 20)
+```
+
+Column {.tabset}
+-----------------------------------------------------------------------
+
+### Grafik Sumber Pertumbuhan Ekonomi Lapangan Usaha
+
+```{r}
+renderPlot({
+sub <- subset(SOG_lapus, subset = Lapangan.Usaha %in% input$ketsoglapus)
+theme_set(theme_bw())
+ggplot(data=sub %>% filter(Lapangan.Usaha %in% input$ketsoglapus) ,aes(x=Tahun, y=SOG, fill=Lapangan.Usaha)) + geom_col(color='black') +
+  scale_x_continuous(breaks=c(2010:2020)) +
+  scale_y_continuous(breaks=c(-3:10)) +
+  scale_fill_ucscgb() +
+  geom_hline(yintercept = 0, linetype='dashed',size=1,color='black') +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(y='PDRB ADHK (Milyar Rupiah)')
+  })
+```
+
+### Tabel Sumber Pertumbuhan Ekonomi Lapangan Usaha
+
+```{r}
+tsoglapus <- reactive({
+subset(SOG_lapus, subset = Lapangan.Usaha %in% input$ketsoglapus) %>% 
+  mutate(Tahun = round(Tahun,0),
+         SOG = round(SOG,2)) %>% 
+    select(Lapangan.Usaha, Tahun, SOG)
+})
+  
+renderDT(
+  DT::datatable(tsoglapus(),rownames=F,extensions = 'Buttons', options = list(
+    scrollY="400px", scrollX=TRUE,
+    dom = 'Bfrtip',
+    buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+    pageLength=20))
+)
+```
+
+### Penjelasan Sumber Pertumbuhan Ekonomi
+
+**Sumber Pertumbuhan Ekonomi**
+
+Konsep Definisi
+
+Seberapa besar bagian dari masing-masing lapangan usaha/komponen dalam penciptaan laju pertumbuhan ekonomi.
+
+Kegunaan
+
+- Mengetahui peran masing-masing lapangan usaha/komponen dalam penciptaan laju pertumbuhan ekonomi.
+
+Rumusan
+
+$$
+SOG_{it} = \frac{PDRB_{it}-PDRB_{it-1}}{\sum PDRB_{it-1}}*100 \%
+$$
+
+Interpretasi
+
+Peran lapangan usaha/komponen terhadap penciptaan pertumbuhan ekonomi adalah sebesar x persen.
+
+Sumber : sirusa.bps.go.id
+
+
+Sumber Pertumbuhan Ekonomi Pengeluaran {data-navmenu=Analisis-PDRB}
+====================================================
+
+Column {data-width=500 .sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+sidebarPanel(
+checkboxGroupInput("ketsogkompen", 
+                              h3("Komponen Pengeluaran"), 
+                              choices = unique(SOG_kompen$Komponen.Pengeluaran),
+                              selected = c('1. Pengeluaran Konsumsi Rumah Tangga',
+                                           '2. Pengeluaran Konsumsi LNPRT',
+                                           '3. Pengeluaran Konsumsi Pemerintah',
+                                           '4. Pembentukan Modal Tetap Bruto',
+                                           '5. Perubahan Inventori',
+                                           '6. Net Ekspor Barang dan Jasa')),
+width = 20)
+```
+
+Column {.tabset}
+-----------------------------------------------------------------------
+
+### Grafik Sumber Pertumbuhan Ekonomi Pengeluaran
+
+```{r}
+renderPlot({
+sub <- subset(SOG_kompen, subset = Komponen.Pengeluaran %in% input$ketsogkompen)
+theme_set(theme_bw())
+ggplot(data=sub %>% filter(Komponen.Pengeluaran %in% input$ketsogkompen) ,aes(x=Tahun, y=SOG, fill=Komponen.Pengeluaran)) + geom_col(color='black') +
+  scale_x_continuous(breaks=c(2010:2020)) +
+  scale_y_continuous(breaks=c(-10:15)) +
+  scale_fill_ucscgb() +
+  geom_hline(yintercept = 0, linetype='dashed',size=1,color='black') +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(y='PDRB ADHK (Milyar Rupiah)')
+  })
+```
+
+### Tabel Sumber Pertumbuhan Ekonomi Pengeluaran
+
+```{r}
+tsogkompen <- reactive({
+subset(SOG_kompen, subset = Komponen.Pengeluaran %in% input$ketsogkompen) %>% 
+  mutate(Tahun = round(Tahun,0),
+         SOG = round(SOG,2)) %>% 
+    select(Komponen.Pengeluaran, Tahun, SOG)
+})
+  
+renderDT(
+  DT::datatable(tsogkompen(),rownames=F,extensions = 'Buttons', options = list(
+    scrollY="400px", scrollX=TRUE,
+    dom = 'Bfrtip',
+    buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+    pageLength=20))
+)
+```
+
+### Penjelasan Sumber Pertumbuhan Ekonomi
+
+**Sumber Pertumbuhan Ekonomi**
+
+Konsep Definisi
+
+Seberapa besar bagian dari masing-masing lapangan usaha/komponen dalam penciptaan laju pertumbuhan ekonomi.
+
+Kegunaan
+
+- Mengetahui peran masing-masing lapangan usaha/komponen dalam penciptaan laju pertumbuhan ekonomi.
+
+Rumusan
+
+$$
+SOG_{it} = \frac{PDRB_{it}-PDRB_{it-1}}{\sum PDRB_{it-1}}*100 \%
+$$
+
+Interpretasi
+
+Peran lapangan usaha/komponen terhadap penciptaan pertumbuhan ekonomi adalah sebesar x persen.
+
+Sumber : sirusa.bps.go.id
+
+Distribusi PDRB (Struktur Ekonomi) Lapangan Usaha {data-navmenu=Analisis-PDRB}
+====================================================
+
+Column {data-width=500 .sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+sidebarPanel(
+checkboxGroupInput("ketdistpus", 
+                              h3("Lapangan Usaha"), 
+                              choices = unique(distlapus$Lapangan.Usaha),
+                              selected = c('A. Pertanian, Kehutanan, dan Perikanan',
+                                           'B. Pertambangan dan Penggalian',
+                                           'C. Industri Pengolahan',
+                                           'D. Pengadaan Listrik dan Gas',
+                                           'E. Pengadaan Air, Pengelolaan Sampah, Limbah dan Daur Ulang',
+                                           'F. Konstruksi',
+                                           'G. Perdagangan Besar dan Eceran; Reparasi Mobil dan Sepeda Motor',
+                                           'H. Transportasi dan Pergudangan',
+                                           'I. Penyediaan Akomodasi dan Makan Minum',
+                                           'J. Informasi dan Komunikasi',
+                                           'K. Jasa Keuangan dan Asuransi',
+                                           'L. Real Estate',
+                                           'M,N. Jasa Perusahaan',
+                                           'O. Administrasi Pemerintahan, Pertahanan dan Jaminan Sosial Wajib',
+                                           'P. Jasa Pendidikan',
+                                           'Q. Jasa Kesehatan dan Kegiatan Sosial',
+                                           'R,S,T,U. Jasa lainnya')),
+width = 20)
+```
+
+Column {.tabset}
+-----------------------------------------------------------------------
+
+### Grafik Disribusi PDRB (Struktur Ekonomi) Lapangan Usaha
+
+```{r}
+renderPlot({
+sub <- subset(distlapus, subset = Lapangan.Usaha %in% input$ketdistpus)
+theme_set(theme_bw())
+ggplot(data=sub %>% filter(Lapangan.Usaha == input$ketdistpus),aes(x=Tahun, y=Laju, fill=Lapangan.Usaha)) + geom_col(color='black') +
+  scale_x_continuous(breaks=c(2010:2020)) +
+  scale_y_continuous(breaks=c(1:20)*5) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_ucscgb() +
+  labs(y='Kontribusi (%)')
+  })
+```
+
+### Tabel Disribusi PDRB (Struktur Ekonomi) Lapangan Usaha
+
+```{r}
+tdistlapus <- reactive({
+subset(distlapus, subset = Lapangan.Usaha %in% input$ketdistpus) %>% 
+  mutate(Tahun = round(Tahun,0)) %>% 
+    select(Lapangan.Usaha, Tahun, Distribusi = Laju)
+})
+  
+renderDT(
+  DT::datatable(tdistlapus(),rownames=F,extensions = 'Buttons', options = list(
+    scrollY="400px", scrollX=TRUE,
+    dom = 'Bfrtip',
+    buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+    pageLength=20))
+)
+```
+
+
+### Penjelasan Distribusi PDRB (Struktur Ekonomi)
+
+**Distribusi PDRB (Struktur Ekonomi)**
+
+Konsep Definisi
+
+- Proporsi masing-masing lapangan usaha/ komponen terhadap total PDRB ADH Berlaku.
+- Peran/kontribusi masing-masing lapangan usaha dalam kemampuan menciptakan nilai tambah.
+- Struktur ekonomi (pergeseran).
+
+Sumber : Materi Pembinaan SNA BPS Tahun 2015
+
+Distribusi PDRB (Struktur Ekonomi) Pengeluaran {data-navmenu=Analisis-PDRB}
+====================================================
+
+Column {data-width=500 .sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+sidebarPanel(
+checkboxGroupInput("ketdistpeng", 
+                              h3("Komponen Pengeluaran"), 
+                              choices = unique(distpengeluaran$Komponen.Pengeluaran),
+                              selected = c('PRODUK DOMESTIK REGIONAL BRUTO',
+                                           '1. Pengeluaran Konsumsi Rumah Tangga',
+                                           '2. Pengeluaran Konsumsi LNPRT',
+                                           '3. Pengeluaran Konsumsi Pemerintah',
+                                           '4. Pembentukan Modal Tetap Bruto',
+                                           '5. Perubahan Inventori',
+                                           '6. Net Ekspor Barang dan Jasa')),
+width = 20)
+```
+
+Column {.tabset}
+-----------------------------------------------------------------------
+
+### Grafik Disribusi PDRB (Struktur Ekonomi) Pengeluaran
+
+```{r}
+renderPlot({
+sub <- subset(distpengeluaran, subset = Komponen.Pengeluaran %in% input$ketdistpeng)
+theme_set(theme_bw())
+ggplot(data=sub %>% filter(Komponen.Pengeluaran == input$ketdistpeng),aes(x=Tahun, y=Laju, fill=Komponen.Pengeluaran)) + geom_col(color='black') +
+  scale_x_continuous(breaks=c(2010:2020)) +
+  scale_y_continuous(breaks=c(1:20)*5) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_fill_ucscgb() +
+  labs(y='Kontribusi (%)')
+  })
+```
+
+### Tabel Disribusi PDRB (Struktur Ekonomi) Pengeluaran
+
+```{r}
+tdistkompen <- reactive({
+subset(distpengeluaran, subset = Komponen.Pengeluaran %in% input$ketdistpeng) %>% 
+  mutate(Tahun = round(Tahun,0)) %>% 
+    select(Komponen.Pengeluaran, Tahun, Distribusi = Laju)
+})
+  
+renderDT(
+  DT::datatable(tdistkompen(),rownames=F,extensions = 'Buttons', options = list(
+    scrollY="400px", scrollX=TRUE,
+    dom = 'Bfrtip',
+    buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+    pageLength=20))
+)
+```
+
+### Penjelasan Distribusi PDRB (Struktur Ekonomi)
+
+**Distribusi PDRB (Struktur Ekonomi)**
+
+Konsep Definisi
+
+- Proporsi masing-masing lapangan usaha/ komponen terhadap total PDRB ADH Berlaku.
+- Peran/kontribusi masing-masing lapangan usaha dalam kemampuan menciptakan nilai tambah.
+- Struktur ekonomi (pergeseran)
+
+Sumber : Materi Pembinaan SNA BPS Tahun 2015
+
+Laju Indeks Implisit Lapangan Usaha {data-navmenu=Analisis-PDRB}
+====================================================
+
+Column {data-width=500 .sidebar}
+-----------------------------------------------------------------------
+
+```{r}
+sidebarPanel(
+checkboxGroupInput("ketlajuimplisit", 
+                              h3("Lapangan Usaha"), 
+                              choices = unique(lajuimplisit$Lapangan.Usaha),
+                              selected = c('PRODUK DOMESTIK REGIONAL BRUTO',
+                                           'A. Pertanian, Kehutanan, dan Perikanan',
+                                           'B. Pertambangan dan Penggalian',
+                                           'C. Industri Pengolahan',
+                                           'D. Pengadaan Listrik dan Gas',
+                                           'E. Pengadaan Air, Pengelolaan Sampah, Limbah dan Daur Ulang',
+                                           'F. Konstruksi',
+                                           'G. Perdagangan Besar dan Eceran; Reparasi Mobil dan Sepeda Motor',
+                                           'H. Transportasi dan Pergudangan',
+                                           'I. Penyediaan Akomodasi dan Makan Minum',
+                                           'J. Informasi dan Komunikasi',
+                                           'K. Jasa Keuangan dan Asuransi',
+                                           'L. Real Estate',
+                                           'M,N. Jasa Perusahaan',
+                                           'O. Administrasi Pemerintahan, Pertahanan dan Jaminan Sosial Wajib',
+                                           'P. Jasa Pendidikan',
+                                           'Q. Jasa Kesehatan dan Kegiatan Sosial',
+                                           'R,S,T,U. Jasa lainnya')),
+width = 20)
+```
+
+Column {.tabset}
+-----------------------------------------------------------------------
+
+### Grafik Laju Implisit Lapangan Usaha
+
+```{r}
+renderPlot({
+sub <- subset(lajuimplisit, subset = Lapangan.Usaha %in% input$ketlajuimplisit)
+theme_set(theme_bw())
+ggplot(data=sub %>% filter(Lapangan.Usaha == input$ketlajuimplisit),aes(x=Tahun, y=Laju, color=Lapangan.Usaha)) + geom_line() + geom_point() +
+  scale_x_continuous(breaks=c(2010:2020)) +
+  scale_y_continuous(breaks=c(-10:30)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  scale_color_ucscgb() +
+  geom_hline(yintercept = 0, linetype='dashed',size=1,color='black') +
+  labs(y='Laju Indeks Implisit (%)')
+  })
+```
+
+### Tabel Laju Implisit Lapangan Usahan
+
+```{r}
+tlajuimplisit <- reactive({
+sub <- subset(lajuimplisit, subset = Lapangan.Usaha %in% input$ketlajuimplisit) %>% 
+  mutate(Tahun = round(Tahun,0))
+})
+  
+renderDT(
+  DT::datatable(tlajuimplisit(),rownames=F,extensions = 'Buttons', options = list(
+    scrollY="400px", scrollX=TRUE,
+    dom = 'Bfrtip',
+    buttons = c('copy', 'csv', 'excel', 'pdf', 'print'),
+    pageLength=20))
+)
+```
+
+### Penjelasan Laju Implisit
+
+**Laju Implisit**
+
+Konsep Definisi
+
+Laju indeks implisit menggambarkan perubahan harga barang dan jasa di tingkat produsen (bisa menjadi proksi Inflasi).
+
+Sumber : Pembinaan Materi SNA BPS Tahun 2015 
